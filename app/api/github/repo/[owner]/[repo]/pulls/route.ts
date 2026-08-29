@@ -1,0 +1,1 @@
+import {NextResponse} from'next/server';import{gh}from'@/lib/github';export async function GET(_req:Request,{params}:{params:Promise<{owner:string;repo:string}>}){try{const{owner,repo}=await params;return NextResponse.json({items:await gh(`/repos/${owner}/${repo}/pulls?state=open&per_page=50`)})}catch(e:any){return NextResponse.json({error:e.message},{status:500})}}

@@ -1,0 +1,2 @@
+import { NextRequest, NextResponse } from 'next/server'; import { gh } from '@/lib/github';
+export async function GET(req:NextRequest){try{const q=req.nextUrl.searchParams.get('q')||'';const sort=req.nextUrl.searchParams.get('sort')||'stars';const data=await gh(`/search/repositories?q=${encodeURIComponent(q||'stars:>1000')}&sort=${sort}&order=desc&per_page=30`);return NextResponse.json(data)}catch(e:any){return NextResponse.json({error:e.message},{status:500})}}

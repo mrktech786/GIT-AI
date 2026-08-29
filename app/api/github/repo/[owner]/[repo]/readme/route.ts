@@ -1,0 +1,2 @@
+import { NextResponse } from 'next/server'; import { gh } from '@/lib/github';
+export async function GET(_req:Request,{params}:{params:Promise<{owner:string;repo:string}>}){try{const {owner,repo}=await params;const d=await gh(`/repos/${owner}/${repo}/readme`);const content=Buffer.from(d.content||'','base64').toString('utf8');return NextResponse.json({content})}catch(e:any){return NextResponse.json({content:'',error:e.message})}}
