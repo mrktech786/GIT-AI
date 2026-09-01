@@ -1,28 +1,53 @@
-# GitAI — Vercel Web Edition
+# WA Hub — Multi WhatsApp Management SaaS
 
-A Vercel-ready web conversion of the `mrktech786/gitdevai786` Android GitAI concept.
+A professional Next.js dashboard for managing many WhatsApp accounts from one workspace. The UI is designed around QR-based device pairing, a unified inbox, broadcasts, automation and analytics.
 
 ## Included
 
-- GitHub repository search
-- Repository README viewer
-- Repository file browser and code viewer
-- Issues, pull requests and commits
-- Browser-local saved repositories
-- Gemini-powered code review, commit generation, PR summaries, debugging and explanations
-- Gemini chat with server-side API key handling
+- Dark emerald/cyan SaaS dashboard
+- Add/link unlimited account records from the UI
+- QR pairing modal with a production-ready transport boundary
+- Device grid/table-style management with online/syncing/offline states
+- Reconnect QR, rename and disconnect actions
+- Unified inbox with account filter and message composer
+- Broadcast center with multi-account selection
+- Auto-responder / chatbot rule UI
+- Analytics dashboard
 - Responsive desktop/mobile layout
+- Server-side WhatsApp session API structure
+- `@whiskeysockets/baileys` dependency and adapter interface for the real transport
+
+## Important production architecture
+
+The dashboard is ready for a real WhatsApp transport, but the browser must **not** contain WhatsApp credentials. The current pairing flow intentionally uses a demo QR payload so the UI can be tested safely.
+
+For production, run a persistent Node.js worker/service (VM, container, or managed worker) that owns Baileys sockets and auth state. Connect it to the Next.js app through REST/WebSocket or a queue. Store per-account auth state in encrypted persistent storage. This is preferable to trying to keep long-lived WhatsApp sockets inside a serverless request function.
+
+Suggested structure:
+
+```text
+Next.js Dashboard
+   │
+   ├── /api/whatsapp/sessions
+   ├── /api/whatsapp/messages
+   └── WebSocket / event stream
+             │
+             ▼
+      WhatsApp Worker
+      └── Baileys socket per account
+             │
+             └── encrypted auth/session store
+```
 
 ## Local development
 
 ```bash
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
-Set `GEMINI_API_KEY` in `.env.local` for AI features. `GITHUB_TOKEN` is optional and can increase GitHub API limits.
+Then open the local Next.js URL. Click **Link WhatsApp** to test the pairing UI and account management flow.
 
 ## Vercel
 
-Import the repository into Vercel. Framework should be detected as Next.js. Add `GEMINI_API_KEY` under Project Settings → Environment Variables, then deploy.
+Import the repository into Vercel and deploy the Next.js dashboard. For real WhatsApp connectivity, host the persistent Baileys worker separately and configure the dashboard's server routes to communicate with that worker.
