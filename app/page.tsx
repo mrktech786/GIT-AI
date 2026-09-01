@@ -1,115 +1,94 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 
-type Repo = { id:number; name:string; full_name:string; description:string|null; stargazers_count:number; forks_count:number; language:string|null; html_url:string; owner:{login:string; avatar_url:string}; default_branch:string };
-type Content = { name:string; path:string; type:'file'|'dir'; download_url:string|null; html_url:string; size:number };
-type Issue = { number:number; title:string; state:string; body:string|null; user?:{login:string;avatar_url:string}; html_url:string; comments:number };
-type Pull = Issue & { head?:{ref:string}; base?:{ref:string} };
+type Status = 'online'|'syncing'|'offline';
+type Device = { id:string; name:string; phone:string; status:Status; lastSeen:string; unread:number; messages:number };
+type Chat = { id:string; deviceId:string; name:string; phone:string; preview:string; time:string; unread:number; avatar:string };
 
-type Tab = 'explore'|'tools'|'chat'|'saved'|'profile';
+const seedDevices:Device[] = [
+  {id:'wa-1',name:'Sales Account',phone:'+92 300 1234567',status:'online',lastSeen:'Now',unread:8,messages:126},
+  {id:'wa-2',name:'Support Team 1',phone:'+92 301 7654321',status:'online',lastSeen:'Now',unread:3,messages:84},
+  {id:'wa-3',name:'Personal',phone:'+92 333 9876543',status:'syncing',lastSeen:'1 min ago',unread:1,messages:42},
+  {id:'wa-4',name:'Orders',phone:'+92 312 4455667',status:'offline',lastSeen:'18 min ago',unread:0,messages:31},
+  {id:'wa-5',name:'Marketing',phone:'+92 320 1122334',status:'online',lastSeen:'Now',unread:12,messages:211}
+];
+const seedChats:Chat[] = [
+  {id:'c1',deviceId:'wa-1',name:'Ali Traders',phone:'+92 301 1112223',preview:'Can you confirm the order?',time:'10:18',unread:2,avatar:'AT'},
+  {id:'c2',deviceId:'wa-2',name:'Ayesha Khan',phone:'+92 333 4445566',preview:'Thank you! I received it.',time:'10:12',unread:1,avatar:'AK'},
+  {id:'c3',deviceId:'wa-5',name:'Bilal Ahmed',phone:'+92 322 7788990',preview:'Is the campaign live?',time:'09:54',unread:4,avatar:'BA'},
+  {id:'c4',deviceId:'wa-1',name:'Hassan Store',phone:'+92 300 8877665',preview:'Please send the invoice.',time:'09:41',unread:0,avatar:'HS'},
+  {id:'c5',deviceId:'wa-3',name:'Sara',phone:'+92 315 9988776',preview:'See you tomorrow.',time:'Yesterday',unread:0,avatar:'SA'}
+];
 
-const tools = [
-  ['CODE_REVIEW','Code Review'],['COMMIT_GEN','Commit Message'],['PR_SUMMARY','PR Summary'],['DEBUG','Debug Assistant'],['EXPLAIN','Explain Code']
-] as const;
+function QrCode({seed}:{seed:string}){
+  const cells=useMemo(()=>Array.from({length:361},(_,i)=>{let n=(i*9301+seed.length*49297+i*i*233)%997; return n>490; }),[seed]);
+  return <div className="qr">{cells.map((on,i)=><i key={i} className={on?'on':''}/>)}</div>;
+}
 
-export default function Home() {
-  const [tab,setTab] = useState<Tab>('explore');
-  const [query,setQuery] = useState('');
-  const [sort,setSort] = useState('stars');
-  const [repos,setRepos] = useState<Repo[]>([]);
-  const [loading,setLoading] = useState(false);
-  const [error,setError] = useState('');
-  const [selected,setSelected] = useState<Repo|null>(null);
-  const [repoTab,setRepoTab] = useState<'readme'|'code'|'issues'|'pulls'|'commits'>('readme');
-  const [contents,setContents] = useState<Content[]>([]);
-  const [path,setPath] = useState('');
-  const [readme,setReadme] = useState('');
-  const [code,setCode] = useState('');
-  const [codeName,setCodeName] = useState('');
-  const [issues,setIssues] = useState<Issue[]>([]);
-  const [pulls,setPulls] = useState<Pull[]>([]);
-  const [commits,setCommits] = useState<any[]>([]);
-  const [saved,setSaved] = useState<Repo[]>([]);
-  const [tool,setTool] = useState<typeof tools[number][0]>('COMMIT_GEN');
-  const [prompt,setPrompt] = useState('');
-  const [context,setContext] = useState('');
-  const [result,setResult] = useState('');
-  const [aiLoading,setAiLoading] = useState(false);
-  const [messages,setMessages] = useState<{role:'user'|'assistant';content:string}[]>([{role:'assistant',content:'👋 Hello! I am GitAI. Ask me to review code, explain an architecture, draft a Conventional Commit, summarize a PR, or debug a Git workflow.'}]);
-  const [chat,setChat] = useState('');
+export default function Home(){
+  const [section,setSection]=useState<'overview'|'devices'|'inbox'|'broadcast'|'automation'|'analytics'|'settings'>('overview');
+  const [devices,setDevices]=useState<Device[]>(seedDevices);
+  const [chats]=useState<Chat[]>(seedChats);
+  const [selectedDevice,setSelectedDevice]=useState('all');
+  const [selectedChat,setSelectedChat]=useState<Chat|null>(seedChats[0]);
+  const [message,setMessage]=useState('');
+  const [qrOpen,setQrOpen]=useState(false);
+  const [qrDevice,setQrDevice]=useState<Device|null>(null);
+  const [newName,setNewName]=useState('');
+  const [search,setSearch]=useState('');
+  const [toast,setToast]=useState('');
 
-  useEffect(()=>{ const raw=localStorage.getItem('gitai-saved'); if(raw) setSaved(JSON.parse(raw)); },[]);
-  useEffect(()=>{ localStorage.setItem('gitai-saved',JSON.stringify(saved)); },[saved]);
-
-  const search = async () => {
-    setLoading(true); setError('');
-    try { const r=await fetch(`/api/github/search?q=${encodeURIComponent(query)}&sort=${sort}`); const d=await r.json(); if(!r.ok) throw new Error(d.error||'GitHub request failed'); setRepos(d.items||[]); }
-    catch(e:any){setError(e.message||'Failed to search GitHub');} finally{setLoading(false)}
+  useEffect(()=>{ const raw=localStorage.getItem('wa-hub-devices'); if(raw) setDevices(JSON.parse(raw)); },[]);
+  useEffect(()=>localStorage.setItem('wa-hub-devices',JSON.stringify(devices)),[devices]);
+  const notify=(text:string)=>{setToast(text);window.setTimeout(()=>setToast(''),2200)};
+  const addDevice=()=>{setQrDevice(null);setQrOpen(true);};
+  const completePair=()=>{
+    const id=`wa-${Date.now()}`; const phone=`+92 ${300+Math.floor(Math.random()*100)} ${Math.floor(1000000+Math.random()*8999999)}`;
+    setDevices(d=>[...d,{id,name:newName.trim()||`WhatsApp ${d.length+1}`,phone,status:'online',lastSeen:'Now',unread:0,messages:0}]);
+    setNewName('');setQrOpen(false);notify('WhatsApp device linked successfully');
   };
+  const disconnect=(id:string)=>{setDevices(d=>d.map(x=>x.id===id?{...x,status:'offline',lastSeen:'Just now'}:x));notify('Device disconnected');};
+  const rename=(id:string)=>{const name=window.prompt('New account alias');if(name?.trim())setDevices(d=>d.map(x=>x.id===id?{...x,name:name.trim()}:x));};
+  const send=()=>{if(!message.trim()||!selectedChat)return;setMessage('');notify(`Message sent via ${devices.find(d=>d.id===selectedChat.deviceId)?.name||'WhatsApp'}`);};
+  const online=devices.filter(d=>d.status==='online').length;
+  const filteredChats=chats.filter(c=>(selectedDevice==='all'||c.deviceId===selectedDevice)&&`${c.name} ${c.phone} ${c.preview}`.toLowerCase().includes(search.toLowerCase()));
 
-  useEffect(()=>{ search(); },[]);
-
-  const openRepo = async (repo:Repo) => {
-    setSelected(repo); setRepoTab('readme'); setPath(''); setCode('');
-    const d=await fetch(`/api/github/repo/${repo.owner.login}/${repo.name}/contents?path=`).then(r=>r.json()); setContents(d.items||[]);
-    const rd=await fetch(`/api/github/repo/${repo.owner.login}/${repo.name}/readme`).then(r=>r.json()); setReadme(rd.content||'');
-  };
-  const loadContent = async (p:string) => {
-    if(!selected) return; const d=await fetch(`/api/github/repo/${selected.owner.login}/${selected.name}/contents?path=${encodeURIComponent(p)}`).then(r=>r.json());
-    if(d.type==='file'){ setCode(d.content||''); setCodeName(d.name||p); } else { setContents(d.items||[]); setPath(p); }
-  };
-  const loadRepoTab = async (t:typeof repoTab) => {
-    if(!selected) return; setRepoTab(t);
-    const base=`/api/github/repo/${selected.owner.login}/${selected.name}`;
-    if(t==='issues') setIssues((await fetch(`${base}/issues?state=open`).then(r=>r.json())).items||[]);
-    if(t==='pulls') setPulls((await fetch(`${base}/pulls`).then(r=>r.json())).items||[]);
-    if(t==='commits') setCommits((await fetch(`${base}/commits`).then(r=>r.json())).items||[]);
-    if(t==='code') { setCode(''); setContents((await fetch(`${base}/contents?path=${encodeURIComponent(path)}`).then(r=>r.json())).items||[]); }
-  };
-  const toggleSave=(r:Repo)=>setSaved(s=>s.some(x=>x.id===r.id)?s.filter(x=>x.id!==r.id):[r,...s]);
-
-  const runAi = async (p=prompt,c=context,t=tool) => {
-    if(!p.trim()) return; setAiLoading(true); setResult('');
-    try { const r=await fetch('/api/ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool:t,prompt:p,context:c})}); const d=await r.json(); if(!r.ok) throw new Error(d.error||'AI request failed'); setResult(d.text||''); }
-    catch(e:any){setResult(`⚠️ ${e.message||'AI request failed'}`)} finally{setAiLoading(false)}
-  };
-  const sendChat=async()=>{ if(!chat.trim()) return; const text=chat; setChat(''); setMessages(m=>[...m,{role:'user',content:text}]); setAiLoading(true); try{ const r=await fetch('/api/ai',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool:'CHAT',prompt:text,context:selected?.full_name||'',history:messages})}); const d=await r.json(); setMessages(m=>[...m,{role:'assistant',content:d.text||d.error||'No response'}]); }finally{setAiLoading(false)} };
-
-  const nav = useMemo(()=>[['explore','Explore'],['tools','AI Tools'],['chat','AI Chat'],['saved','Saved'],['profile','Profile']] as [Tab,string][],[]);
-
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">✦</span><div><b>GitAI</b><small>Developer cockpit</small></div></div>
-      <nav>{nav.map(([id,label])=><button key={id} className={tab===id?'nav active':'nav'} onClick={()=>setTab(id)}><span>{({explore:'⌕',tools:'✦',chat:'◌',saved:'★',profile:'●'} as any)[id]}</span>{label}</button>)}</nav>
-      <div className="sidebar-note"><b>Gemini powered</b><span>AI features run securely through Vercel server routes.</span></div>
+  const nav=[['overview','Overview','⌂'],['devices','WhatsApp Devices','▦'],['inbox','Unified Inbox','▤'],['broadcast','Broadcast','◉'],['automation','Automation','✦'],['analytics','Analytics','⌁'],['settings','Settings','⚙']] as const;
+  return <div className="wa-app">
+    <aside className="wa-sidebar">
+      <div className="wa-brand"><div className="wa-logo">◔</div><div><b>WA Hub</b><span>Multi WhatsApp</span></div></div>
+      <button className="add-device" onClick={addDevice}>＋ Link WhatsApp</button>
+      <nav>{nav.map(([id,label,icon])=><button key={id} className={section===id?'active':''} onClick={()=>setSection(id)}><span>{icon}</span>{label}{id==='inbox'&&<em>24</em>}</button>)}</nav>
+      <div className="side-bottom"><div className="connection"><i/> All systems operational</div><small>Secure multi-account workspace</small></div>
     </aside>
 
-    <main className="main">
-      <header className="topbar"><div><h1>{tab==='explore'?'Explore GitHub':tab==='tools'?'AI Developer Tools':tab==='chat'?'AI Chat':tab==='saved'?'Saved Repositories':'Profile & Settings'}</h1><p>{tab==='explore'?'Search repositories, inspect code, issues, PRs and commits.':'GitAI — your AI coding assistant.'}</p></div><a className="github-link" href="https://github.com/mrktech786/gitdevai786" target="_blank">Source ↗</a></header>
+    <main className="wa-main">
+      <header className="wa-topbar"><div><h1>{nav.find(n=>n[0]===section)?.[1]}</h1><p>Manage all your WhatsApp accounts from one professional dashboard.</p></div><div className="top-actions"><span className="live"><i/> {online} online</span><button className="avatar">MR</button></div></header>
 
-      {tab==='explore' && <section className="content-grid">
-        <div className="search-row"><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&search()} placeholder="Search GitHub repositories…"/><select value={sort} onChange={e=>setSort(e.target.value)}><option value="stars">Stars</option><option value="forks">Forks</option><option value="updated">Updated</option></select><button className="primary" onClick={search}>{loading?'Searching…':'Search'}</button></div>
-        {error&&<div className="error">{error}</div>}
-        <div className="repo-list">{repos.map(r=><article className="repo-card" key={r.id} onClick={()=>openRepo(r)}><div className="repo-head"><img src={r.owner.avatar_url}/><div><h3>{r.full_name}</h3><p>{r.description||'No description provided.'}</p></div><button className="icon" onClick={e=>{e.stopPropagation();toggleSave(r)}}>{saved.some(x=>x.id===r.id)?'★':'☆'}</button></div><div className="meta"><span>★ {r.stargazers_count}</span><span>⑂ {r.forks_count}</span><span>{r.language||'Unknown'}</span></div></article>)}</div>
+      {section==='overview'&&<section className="wa-content">
+        <div className="hero"><div><span className="eyebrow">MULTI-ACCOUNT CONTROL CENTER</span><h2>One dashboard.<br/><strong>All your WhatsApp.</strong></h2><p>Link 5, 10, 15 or more accounts and manage chats, broadcasts and automations from one place.</p><button onClick={addDevice}>＋ Link another account</button></div><div className="hero-orb"><div className="orb-ring">◔</div><span>Unlimited<br/>connections</span></div></div>
+        <div className="stats"><div><span>Total Devices</span><b>{devices.length}</b><small>↑ Ready to scale</small></div><div><span>Active Connections</span><b>{online}</b><small>Live now</small></div><div><span>Messages Today</span><b>1,248</b><small>↑ 18.4% vs yesterday</small></div><div><span>Failed Messages</span><b>7</b><small>↓ 3.2% improvement</small></div></div>
+        <div className="section-head"><div><h3>Connected WhatsApp Accounts</h3><p>Monitor and control every linked number.</p></div><button className="ghost" onClick={()=>setSection('devices')}>View all →</button></div>
+        <div className="device-grid">{devices.slice(0,6).map(d=><DeviceCard key={d.id} d={d} onQr={()=>{setQrDevice(d);setQrOpen(true)}} onDisconnect={()=>disconnect(d.id)} onRename={()=>rename(d.id)} />)}</div>
       </section>}
 
-      {tab==='saved' && <section className="repo-list">{saved.length===0?<div className="empty">No saved repositories yet.</div>:saved.map(r=><article className="repo-card" key={r.id} onClick={()=>{setTab('explore');openRepo(r)}}><div className="repo-head"><img src={r.owner.avatar_url}/><div><h3>{r.full_name}</h3><p>{r.description||'No description provided.'}</p></div><button className="icon" onClick={e=>{e.stopPropagation();toggleSave(r)}}>★</button></div><div className="meta"><span>★ {r.stargazers_count}</span><span>⑂ {r.forks_count}</span><span>{r.language||'Unknown'}</span></div></article>)}</section>}
+      {section==='devices'&&<section className="wa-content"><div className="toolbar"><div><h3>WhatsApp Devices</h3><p>{devices.length} linked accounts • Add as many as your infrastructure supports.</p></div><button className="primary" onClick={addDevice}>＋ Link WhatsApp</button></div><div className="device-grid full">{devices.map(d=><DeviceCard key={d.id} d={d} onQr={()=>{setQrDevice(d);setQrOpen(true)}} onDisconnect={()=>disconnect(d.id)} onRename={()=>rename(d.id)} />)}</div></section>}
 
-      {tab==='tools' && <section className="tool-layout"><div className="panel tool-menu">{tools.map(([id,label])=><button className={tool===id?'tool active':'tool'} key={id} onClick={()=>setTool(id)}>{label}</button>)}</div><div className="panel"><label>Prompt</label><textarea value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Describe what you want GitAI to do…"/><label>Context (optional)</label><textarea value={context} onChange={e=>setContext(e.target.value)} placeholder="Paste code, repository details, error logs, PR description…"/><button className="primary wide" onClick={()=>runAi()}>{aiLoading?'Generating…':'Generate with Gemini'}</button>{result&&<div className="ai-result"><ReactMarkdown>{result}</ReactMarkdown></div>}</div></section>}
+      {section==='inbox'&&<section className="inbox"><div className="inbox-left"><div className="inbox-head"><div><h3>Unified Inbox</h3><span>{chats.length} conversations</span></div><select value={selectedDevice} onChange={e=>setSelectedDevice(e.target.value)}><option value="all">All accounts</option>{devices.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div><input className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations…"/>{filteredChats.map(c=><button key={c.id} className={selectedChat?.id===c.id?'chat-row selected':'chat-row'} onClick={()=>setSelectedChat(c)}><div className="chat-avatar">{c.avatar}</div><div><b>{c.name}</b><small>{devices.find(d=>d.id===c.deviceId)?.name}</small><p>{c.preview}</p></div><aside><span>{c.time}</span>{c.unread>0&&<em>{c.unread}</em>}</aside></button>)}</div><div className="conversation">{selectedChat?<><div className="conv-head"><div className="chat-avatar">{selectedChat.avatar}</div><div><b>{selectedChat.name}</b><span>{selectedChat.phone} · via {devices.find(d=>d.id===selectedChat.deviceId)?.name}</span></div><button>⋮</button></div><div className="messages"><div className="date-pill">Today</div><div className="bubble them">Hello! How can we help you today?<small>10:14 ✓✓</small></div><div className="bubble me">Hi, I wanted to confirm my order.<small>10:16 ✓✓</small></div><div className="bubble them">Can you confirm the order number for me?<small>10:18</small></div></div><div className="composer"><button>＋</button><input value={message} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Type a message…"/><button className="send" onClick={send}>➤</button></div></>:<div className="empty-chat">Select a conversation</div>}</div></section>}
 
-      {tab==='chat' && <section className="chat panel"><div className="messages">{messages.map((m,i)=><div key={i} className={m.role==='user'?'msg user':'msg'}><ReactMarkdown>{m.content}</ReactMarkdown></div>)}</div><div className="chat-input"><textarea value={chat} onChange={e=>setChat(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}}} placeholder="Ask GitAI…"/><button className="primary" onClick={sendChat}>{aiLoading?'…':'Send'}</button></div></section>}
+      {section==='broadcast'&&<section className="wa-content"><div className="toolbar"><div><h3>Broadcast Center</h3><p>Send campaigns from one or multiple linked accounts.</p></div></div><div className="broadcast-layout"><div className="panel"><label>Sending accounts</label><div className="check-list">{devices.map(d=><label key={d.id}><input type="checkbox" defaultChecked={d.status==='online'}/><span>{d.name}</span><small>{d.phone}</small></label>)}</div></div><div className="panel"><label>Message template</label><textarea placeholder="Write your broadcast message…"/><div className="broadcast-foot"><span>0 / 4096</span><button className="primary" onClick={()=>notify('Broadcast queued for selected accounts')}>Schedule / Send</button></div></div></div></section>}
 
-      {tab==='profile' && <section className="panel profile"><h2>GitAI Web</h2><p>This Vercel edition preserves the core product idea of the Android app: GitHub exploration plus Gemini-powered coding assistance.</p><div className="feature-list"><div><b>Public GitHub data</b><span>Search repositories and inspect README, files, issues, pull requests and commits.</span></div><div><b>AI tools</b><span>Code review, commit generation, PR summaries, debugging and explanations.</span></div><div><b>Local saves</b><span>Saved repositories are kept in your browser using localStorage.</span></div><div><b>Security</b><span>Gemini API credentials stay server-side in Vercel environment variables.</span></div></div></section>}
+      {section==='automation'&&<section className="wa-content"><div className="toolbar"><div><h3>Automation & Chatbots</h3><p>Configure auto-replies for each WhatsApp account.</p></div><button className="primary" onClick={()=>notify('Automation rule created')}>＋ New rule</button></div><div className="automation-grid">{['Welcome message','Away response','Order status bot','FAQ assistant'].map((x,i)=><div className="automation-card" key={x}><div className="automation-icon">✦</div><div><b>{x}</b><p>{['Greet new customers automatically.','Reply outside business hours.','Send live order updates.','Answer common questions.'][i]}</p></div><label className="switch"><input type="checkbox" defaultChecked={i<2}/><i/></label></div>)}</div></section>}
 
-      {selected && <div className="overlay"><div className="drawer"><div className="drawer-head"><div><h2>{selected.full_name}</h2><p>{selected.description}</p></div><button className="icon" onClick={()=>setSelected(null)}>×</button></div><div className="tabs">{(['readme','code','issues','pulls','commits'] as const).map(t=><button className={repoTab===t?'tab active':'tab'} key={t} onClick={()=>loadRepoTab(t)}>{t}</button>)}</div>
-        {repoTab==='readme'&&<div className="markdown"><ReactMarkdown>{readme||'No README found.'}</ReactMarkdown></div>}
-        {repoTab==='code'&&<div className="code-layout"><div className="file-list"><div className="path">/{path||''}</div>{contents.map(c=><button key={c.path} onClick={()=>c.type==='dir'?loadContent(c.path):loadContent(c.path)} className="file">{c.type==='dir'?'📁':'📄'} {c.name}</button>)}</div>{code&&<div className="code-view"><div className="code-head"><b>{codeName}</b><button className="small" onClick={()=>{setContext(code);setPrompt(`Review ${codeName} for bugs, security issues, maintainability and concrete improvements.`);setTab('tools');setSelected(null)}}>AI Review</button></div><pre><code>{code}</code></pre></div>}</div>}
-        {repoTab==='issues'&&<div className="items">{issues.map(i=><div className="item" key={i.number}><b>#{i.number} {i.title}</b><span>{i.state} · {i.user?.login||'unknown'} · {i.comments} comments</span><p>{i.body||''}</p></div>)}</div>}
-        {repoTab==='pulls'&&<div className="items">{pulls.map(p=><div className="item" key={p.number}><b>#{p.number} {p.title}</b><span>{p.state} · {p.head?.ref||''} → {p.base?.ref||''}</span><p>{p.body||''}</p></div>)}</div>}
-        {repoTab==='commits'&&<div className="items">{commits.map(c=><div className="item" key={c.sha}><b>{c.commit?.message?.split('\n')[0]}</b><span>{c.sha?.slice(0,8)} · {c.author?.login||c.commit?.author?.name||'unknown'}</span></div>)}</div>}
-      </div></div>}
+      {section==='analytics'&&<section className="wa-content"><div className="toolbar"><div><h3>Analytics</h3><p>Performance across all linked accounts.</p></div><select><option>Last 7 days</option><option>Last 30 days</option></select></div><div className="analytics-grid"><div className="big-chart"><div className="chart-head"><b>Messages</b><span>1,248 total</span></div><div className="bars">{[42,64,51,78,60,88,72,95,68,83,76,100,91,86].map((h,i)=><i key={i} style={{height:`${h}%`}}/>)}</div></div><div className="panel"><b>Account performance</b>{devices.map(d=><div className="perf" key={d.id}><span>{d.name}</span><b>{d.messages+Math.floor(Math.random()*20)}</b><i><em style={{width:`${Math.min(100,30+d.messages/3)}%`}}/></i></div>)}</div></div></section>}
+
+      {section==='settings'&&<section className="wa-content"><div className="panel settings"><h3>Workspace Settings</h3><div className="setting"><div><b>Session persistence</b><p>Keep WhatsApp sessions stored by your backend session manager.</p></div><label className="switch"><input type="checkbox" defaultChecked/><i/></label></div><div className="setting"><div><b>Realtime WebSocket events</b><p>Receive connection, message and sync events instantly.</p></div><label className="switch"><input type="checkbox" defaultChecked/><i/></label></div><div className="setting"><div><b>API integration mode</b><p>Baileys / whatsapp-web.js adapter endpoints are ready for server integration.</p></div><span className="badge">READY</span></div></div></section>}
+
+      {toast&&<div className="toast">✓ {toast}</div>}
+      {qrOpen&&<div className="modal-backdrop"><div className="qr-modal"><button className="close" onClick={()=>setQrOpen(false)}>×</button><span className="eyebrow">SECURE DEVICE PAIRING</span><h2>{qrDevice?'Re-link':'Link'} WhatsApp</h2><p>Open WhatsApp → Linked devices → Link a device, then scan this QR code.</p><QrCode seed={qrDevice?.id||'new-device'}/><div className="qr-status"><i/> Waiting for scan…</div><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Account alias (e.g. Sales Account)"/><button className="primary wide" onClick={completePair}>Simulate successful scan</button><small>This demo UI is integration-ready; the production QR should be emitted by your Baileys/WhatsApp Web backend.</small></div></div>}
     </main>
   </div>
 }
+
+function DeviceCard({d,onQr,onDisconnect,onRename}:{d:Device;onQr:()=>void;onDisconnect:()=>void;onRename:()=>void}){return <article className="device-card"><div className="device-top"><div className="wa-device-icon">◔</div><span className={`status ${d.status}`}><i/>{d.status}</span><button className="more">⋮</button></div><h4>{d.name}</h4><p className="phone">{d.phone}</p><div className="device-meta"><span>💬 {d.messages} msgs</span><span>◷ {d.lastSeen}</span>{d.unread>0&&<b>{d.unread} unread</b>}</div><div className="device-actions"><button onClick={onQr}>QR / Reconnect</button><button onClick={onRename}>Rename</button><button className="danger" onClick={onDisconnect}>Disconnect</button></div></article>}
